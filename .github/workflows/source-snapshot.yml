@@ -1,0 +1,32 @@
+name: Assemble source-only audit bundle
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  snapshot:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - name: Fetch locked source snapshots
+        run: bash ./prepare-locked-sources.sh
+      - name: Verify the SDL archive referenced by Emscripten 3.1.40
+        run: |
+          curl --fail --location --retry 3 -o sources/SDL-release-2.24.2.zip https://github.com/libsdl-org/SDL/archive/release-2.24.2.zip
+          echo "b178bdc8f7c40271e09a72f639649d1d61953dda4dc12b77437259667b63b961fd3b2c67b0de6fdc5f9f9c80c49bfafd164e4c13715bc1056e550acc8bad5a3c  sources/SDL-release-2.24.2.zip" | sha512sum --check
+      - name: Assemble source-only bundle
+        run: |
+          tar --exclude-vcs -czf "$RUNNER_TEMP/ffmpeg-source-candidate.tar.gz" Dockerfile Makefile LICENSE README.md README-REBUILD.md licenses sources sources.lock.tsv prepare-locked-sources.sh build src .github/workflows
+          sha256sum "$RUNNER_TEMP/ffmpeg-source-candidate.tar.gz"
+          ls -lh "$RUNNER_TEMP/ffmpeg-source-candidate.tar.gz"
+      - name: Save candidate sources for review
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: ffmpeg-source-candidate
+          path: ${{ runner.temp }}/ffmpeg-source-candidate.tar.gz
+          if-no-files-found: error
+          retention-days: 7
+          compression-level: 0
