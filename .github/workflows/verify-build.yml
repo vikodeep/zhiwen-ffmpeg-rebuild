@@ -1,0 +1,28 @@
+name: Verify locked FFmpeg build
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - name: Fetch locked source snapshots
+        run: bash ./prepare-locked-sources.sh
+      - name: Record source and toolchain information
+        run: |
+          sha256sum sources.lock.tsv Dockerfile Makefile
+          docker version
+          docker buildx version
+      - name: Build single-threaded core
+        run: make prd
+      - name: Inspect output without publishing it
+        run: |
+          test -s packages/core/dist/esm/ffmpeg-core.js
+          test -s packages/core/dist/esm/ffmpeg-core.wasm
+          sha256sum packages/core/dist/esm/ffmpeg-core.js packages/core/dist/esm/ffmpeg-core.wasm
+          echo "Experimental build only. No binary, source archive, site or artifact is published by this workflow."
