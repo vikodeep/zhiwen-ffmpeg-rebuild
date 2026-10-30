@@ -1,0 +1,48 @@
+name: Publish FFmpeg corresponding source
+on:
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  source:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - name: Fetch exact locked sources
+        run: bash ./prepare-locked-sources.sh
+      - name: Verify SDL source archive
+        run: |
+          curl --fail --location --retry 3 -o sources/SDL-release-2.24.2.zip https://github.com/libsdl-org/SDL/archive/release-2.24.2.zip
+          echo "b178bdc8f7c40271e09a72f639649d1d61953dda4dc12b77437259667b63b961fd3b2c67b0de6fdc5f9f9c80c49bfafd164e4c13715bc1056e550acc8bad5a3c  sources/SDL-release-2.24.2.zip" | sha512sum --check
+      - name: Validate and assemble source archive
+        run: |
+          test "$(wc -l < sources.lock.tsv)" -eq 19
+          while IFS=$'\t' read -r name url commit; do
+            test -d "sources/$name"
+            test -n "$(find "sources/$name" -type f -print -quit)"
+          done < sources.lock.tsv
+          test -s licenses/COPYING.GPLv2
+          test -s licenses/COPYING.LGPLv2.1
+          test -s Dockerfile && test -s Makefile && test -s README.md
+          mkdir -p "$RUNNER_TEMP/source-release"
+          archive="$RUNNER_TEMP/source-release/ffmpeg-core-0.12.10-corresponding-source-v1.tar.gz"
+          tar --exclude-vcs -czf "$archive" Dockerfile Makefile LICENSE README.md README-REBUILD.md licenses sources sources.lock.tsv prepare-locked-sources.sh build src .github/workflows
+          tar -tzf "$archive" > "$RUNNER_TEMP/source-release/contents.txt"
+          grep -q '^sources/ffmpeg/' "$RUNNER_TEMP/source-release/contents.txt"
+          grep -q '^sources/emscripten/' "$RUNNER_TEMP/source-release/contents.txt"
+          grep -q '^sources/emsdk/' "$RUNNER_TEMP/source-release/contents.txt"
+          grep -q '^sources/SDL-release-2.24.2.zip$' "$RUNNER_TEMP/source-release/contents.txt"
+          sha256sum "$archive"
+          ls -lh "$archive"
+      - name: Publish source archive (no binaries)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create ffmpeg-core-0.12.10-corresponding-source-v1 \
+            "$RUNNER_TEMP/source-release/ffmpeg-core-0.12.10-corresponding-source-v1.tar.gz" \
+            --title "FFmpeg core 0.12.10 corresponding source" \
+            --notes "Source-only archive for the FFmpeg core used by the file toolbox. The locked source/build in this repository reproduces the distributed core JavaScript and WASM byte-for-byte (SHA-256 recorded in README-REBUILD.md). This release intentionally contains no compiled binaries. Includes pinned upstream and dependency sources, recursive submodule snapshots, build scripts, toolchain source snapshots, SDL source archive, and GPL/LGPL license texts. Review license files and each component's notices before redistribution."
